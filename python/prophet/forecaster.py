@@ -313,7 +313,10 @@ class Prophet(object):
             if 'floor' not in df:
                 raise ValueError('Expected column "floor".')
         else:
-            df['floor'] = 0
+            if 'y' in df:
+                df['floor'] = self.y_min
+            else:
+                df['floor'] = 0
         if self.growth == 'logistic':
             if 'cap' not in df:
                 raise ValueError(
@@ -328,7 +331,7 @@ class Prophet(object):
 
         df['t'] = (df['ds'] - self.start) / self.t_scale
         if 'y' in df:
-            df['y_scaled'] = (df['y'] - df['floor']) / self.y_scale
+            df['y_scaled'] = (df['y'] - self.y_min) / self.y_scale
 
         for name, props in self.extra_regressors.items():
             df[name] = ((df[name] - props['mu']) / props['std'])
@@ -348,10 +351,11 @@ class Prophet(object):
             return
         if self.growth == 'logistic' and 'floor' in df:
             self.logistic_floor = True
-            floor = df['floor']
+            self.y_min = df['floor'].min()
+            self.y_scale = float(df['cap'].max() - self.y_min)
         else:
-            floor = 0.
-        self.y_scale = float((df['y'] - floor).abs().max())
+            self.y_min = df['y'].min()
+            self.y_scale =  float(df['y'].max() - self.y_min)
         if self.y_scale == 0:
             self.y_scale = 1.0
         self.start = df['ds'].min()
@@ -1336,7 +1340,7 @@ class Prophet(object):
             # constant trend
             trend = self.flat_trend(t, m)
 
-        return trend * self.y_scale + df['floor']
+        return (trend * self.y_scale) + self.y_min
 
     def predict_seasonal_components(self, df):
         """Predict seasonality components, holidays, and added regressors.
@@ -1467,12 +1471,12 @@ class Prophet(object):
         trend = self.sample_predictive_trend(df, iteration)
 
         beta = self.params['beta'][iteration]
-        Xb_a = np.matmul(seasonal_features.values,
-                         beta * s_a.values) * self.y_scale
+        Xb_a = (np.matmul(seasonal_features.values,
+                         beta * s_a.values) * self.y_scale)
         Xb_m = np.matmul(seasonal_features.values, beta * s_m.values)
 
         sigma = self.params['sigma_obs'][iteration]
-        noise = np.random.normal(0, sigma, df.shape[0]) * self.y_scale
+        noise = (np.random.normal(0, sigma, df.shape[0]) * self.y_scale)
 
         return {
             'yhat': trend * (1 + Xb_m) + Xb_a + noise,
@@ -1496,13 +1500,12 @@ class Prophet(object):
         """
         # Get the seasonality and regressor components, which are deterministic per iteration
         beta = self.params['beta'][iteration]
-        Xb_a = np.matmul(seasonal_features.values,
-                        beta * s_a.values) * self.y_scale
+        Xb_a = np.matmul(seasonal_features.values, beta * s_a.values) * self.y_scale
         Xb_m = np.matmul(seasonal_features.values, beta * s_m.values)
         # Get the future trend, which is stochastic per iteration
         trends = self.sample_predictive_trend_vectorized(df, n_samples, iteration)  # already on the same scale as the actual data
         sigma = self.params['sigma_obs'][iteration]
-        noise_terms = np.random.normal(0, sigma, trends.shape) * self.y_scale
+        noise_terms = np.random.normal(0, sigma, trends.shape)  * self.y_scale
 
         simulations = []
         for trend, noise in zip(trends, noise_terms):
@@ -1563,7 +1566,7 @@ class Prophet(object):
         elif self.growth == 'flat':
             trend = self.flat_trend(t, m)
 
-        return trend * self.y_scale + df['floor']
+        return (trend * self.y_scale) + self.y_min
 
     def sample_predictive_trend_vectorized(self, df: pd.DataFrame, n_samples: int, iteration: int = 0) -> np.ndarray:
         """Sample draws of the future trend values. Vectorized version of sample_predictive_trend().
@@ -1586,10 +1589,10 @@ class Prophet(object):
         else:
             raise NotImplementedError
         uncertainty = self._sample_uncertainty(df, n_samples, iteration)
-        return (
-            (np.tile(expected, (n_samples, 1)) + uncertainty) * self.y_scale +
-            np.tile(df["floor"].values, (n_samples, 1))
+        scaled_uncertainty = (
+            ((np.tile(expected, (n_samples, 1)) + uncertainty) * self.y_scale) + self.y_min
         )
+        return scaled_uncertainty
 
     def _sample_uncertainty(self, df: pd.DataFrame, n_samples: int, iteration: int = 0) -> np.ndarray:
         """Sample draws of future trend changes, vectorizing as much as possible.
