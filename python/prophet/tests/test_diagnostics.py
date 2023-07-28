@@ -301,24 +301,22 @@ class TestPerformanceMetrics:
 
 class TestProphetCopy:
     @pytest.fixture(scope="class")
-    def data(self, daily_univariate_ts):
+    def data(self, daily_univariate_ts) -> pd.DataFrame:
         df = daily_univariate_ts.copy()
         df["cap"] = 200.0
         df["binary_feature"] = [0] * 255 + [1] * 255
         return df
 
-    def test_prophet_copy(self, data, backend):
+    def test_prophet_copy(self, data: pd.DataFrame, backend):
         # These values are created except for its default values
         holiday = pd.DataFrame({"ds": pd.to_datetime(["2016-12-25"]), "holiday": ["x"]})
         products = itertools.product(
             ["linear", "logistic"],  # growth
             [None, pd.to_datetime(["2016-12-25"])],  # changepoints
-            [3],  # n_changepoints
             [0.9],  # changepoint_range
             [True, False],  # yearly_seasonality
             [True, False],  # weekly_seasonality
             [True, False],  # daily_seasonality
-            [None, holiday],  # holidays
             ["additive", "multiplicative"],  # seasonality_mode
             [1.1],  # seasonality_prior_scale
             [1.1],  # holidays_prior_scale
@@ -326,6 +324,8 @@ class TestProphetCopy:
             [100],  # mcmc_samples
             [0.9],  # interval_width
             [200],  # uncertainty_samples
+            [3],  # n_changepoints
+            [None, holiday],  # holidays
         )
         # Values should be copied correctly
         for product in products:
@@ -341,9 +341,9 @@ class TestProphetCopy:
                 assert m1.changepoints == m2.changepoints
             else:
                 assert m1.changepoints.equals(m2.changepoints)
-            assert False == m2.yearly_seasonality
-            assert False == m2.weekly_seasonality
-            assert False == m2.daily_seasonality
+            assert m2.yearly_seasonality is False
+            assert m2.weekly_seasonality is False
+            assert m2.daily_seasonality is False
             assert m1.yearly_seasonality == ("yearly" in m2.seasonalities)
             assert m1.weekly_seasonality == ("weekly" in m2.seasonalities)
             assert m1.daily_seasonality == ("daily" in m2.seasonalities)

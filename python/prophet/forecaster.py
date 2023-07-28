@@ -4,14 +4,14 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import, annotations, division, print_function
 
 import dataclasses
 import logging
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from datetime import timedelta
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,7 @@ logger = logging.getLogger('prophet')
 logger.setLevel(logging.INFO)
 NANOSECONDS_TO_SECONDS = 1000 * 1000 * 1000
 
-class Prophet(object):
+class Prophet:
     """Prophet forecaster.
 
     Parameters
@@ -80,25 +80,25 @@ class Prophet(object):
     """
 
     def __init__(
-            self,
-            growth='linear',
-            changepoints=None,
-            n_changepoints=25,
-            changepoint_range=0.8,
-            yearly_seasonality='auto',
-            weekly_seasonality='auto',
-            daily_seasonality='auto',
-            holidays=None,
-            seasonality_mode='additive',
-            seasonality_prior_scale=10.0,
-            holidays_prior_scale=10.0,
-            changepoint_prior_scale=0.05,
-            mcmc_samples=0,
-            interval_width=0.80,
-            uncertainty_samples=1000,
-            stan_backend=None,
-            scaling: str = 'absmax',
-            holidays_mode=None,
+        self,
+        growth: str = "linear",
+        changepoints: Optional[Union[List[str], NDArray, pd.DatetimeIndex]] = None,
+        n_changepoints: int = 25,
+        changepoint_range: float = 0.8,
+        yearly_seasonality: str = "auto",
+        weekly_seasonality: str = "auto",
+        daily_seasonality: str = "auto",
+        holidays: Optional[pd.DataFrame] = None,
+        seasonality_mode: str = "additive",
+        seasonality_prior_scale: float = 10.0,
+        holidays_prior_scale: float = 10.0,
+        changepoint_prior_scale: float = 0.05,
+        mcmc_samples: int = 0,
+        interval_width: float = 0.80,
+        uncertainty_samples: int = 1000,
+        stan_backend: Optional[str] = None,
+        scaling: str = "absmax",
+        holidays_mode: Optional[str] = None,
     ):
         self.growth = growth
 
@@ -154,7 +154,7 @@ class Prophet(object):
         self.validate_inputs()
         self._load_stan_backend(stan_backend)
 
-    def _load_stan_backend(self, stan_backend):
+    def _load_stan_backend(self, stan_backend: Optional[str] = None):
         if stan_backend is None:
             for i in StanBackendEnum:
                 try:
@@ -211,8 +211,8 @@ class Prophet(object):
                 'holidays_mode must be "additive" or "multiplicative"'
             )
 
-    def validate_column_name(self, name, check_holidays=True,
-                             check_seasonalities=True, check_regressors=True):
+    def validate_column_name(self, name: str, check_holidays: bool = True,
+                             check_seasonalities: bool = True, check_regressors: bool = True):
         """Validates the name of a seasonality, holiday, or regressor.
 
         Parameters
@@ -261,7 +261,11 @@ class Prophet(object):
                 .format(name=name)
             )
 
-    def setup_dataframe(self, df, initialize_scales=False):
+    def setup_dataframe(
+            self,
+            df: pd.DataFrame,
+            initialize_scales: bool = False,
+        ) -> pd.DataFrame:
         """Prepare dataframe for fitting or predicting.
 
         Adds a time index and scales y. Creates auxiliary columns 't', 't_ix',
@@ -280,7 +284,7 @@ class Prophet(object):
         """
         if 'y' in df:  # 'y' will be in training data
             df['y'] = pd.to_numeric(df['y'])
-            if np.isinf(df['y'].values).any():
+            if np.isinf(df['y'].to_numpy()).any():
                 raise ValueError('Found infinity in column y.')
         if df['ds'].dtype == np.int64:
             df['ds'] = df['ds'].astype(str)
@@ -353,7 +357,7 @@ class Prophet(object):
             df[name] = ((df[name] - props['mu']) / props['std'])
         return df
 
-    def initialize_scales(self, initialize_scales, df):
+    def initialize_scales(self, initialize_scales: bool, df: pd.DataFrame):
         """Initialize model scales.
 
         Sets model scaling factors using df.
@@ -485,7 +489,13 @@ class Prophet(object):
         return fourier_components
 
     @classmethod
-    def make_seasonality_features(cls, dates, period, series_order, prefix):
+    def make_seasonality_features(
+        cls,
+        dates: pd.Series,
+        period: Union[int, float],
+        series_order: int,
+        prefix: str,
+    ):
         """Data frame with seasonality features.
 
         Parameters
@@ -507,7 +517,7 @@ class Prophet(object):
         ]
         return pd.DataFrame(features, columns=columns)
 
-    def construct_holiday_dataframe(self, dates):
+    def construct_holiday_dataframe(self, dates: pd.Series) -> pd.DataFrame:
         """Construct a dataframe of holiday dates.
 
         Will combine self.holidays with the built-in country holidays
@@ -554,7 +564,7 @@ class Prophet(object):
             all_holidays.reset_index(drop=True, inplace=True)
         return all_holidays
 
-    def make_holiday_features(self, dates, holidays):
+    def make_holiday_features(self, dates: pd.Series, holidays: pd.DataFrame):
         """Construct a dataframe of holiday features.
 
         Parameters
@@ -625,8 +635,12 @@ class Prophet(object):
             self.train_holiday_names = pd.Series(holiday_names)
         return holiday_features, prior_scale_list, holiday_names
 
-    def add_regressor(self, name, prior_scale=None, standardize='auto',
-                      mode=None):
+    def add_regressor(
+            self,
+            name: str, standardize: str = 'auto',
+            prior_scale: Optional[float] = None, 
+            mode: Optional[str] = None,
+        ) -> "Prophet":
         """Add an additional regressor to be used for fitting and predicting.
 
         The dataframe passed to `fit` and `predict` will have a column with the
@@ -782,7 +796,7 @@ class Prophet(object):
         self.country_holidays = country_name
         return self
 
-    def make_all_seasonality_features(self, df):
+    def make_all_seasonality_features(self, df: pd.DataFrame):
         """Dataframe with seasonality features.
 
         Includes seasonality features, holiday features, and added regressors.
@@ -848,7 +862,7 @@ class Prophet(object):
         )
         return seasonal_features, prior_scales, component_cols, modes
 
-    def regressor_column_matrix(self, seasonal_features, modes):
+    def regressor_column_matrix(self, seasonal_features: pd.DataFrame, modes: Dict):
         """Dataframe indicating which columns of the feature matrix correspond
         to which seasonality/regressor components.
 
@@ -1029,7 +1043,7 @@ class Prophet(object):
             }
 
     @staticmethod
-    def linear_growth_init(df):
+    def linear_growth_init(df: pd.DataFrame) -> Tuple[float, float]:
         """Initialize linear growth.
 
         Provides a strong initialization for linear growth by calculating the
@@ -1053,7 +1067,7 @@ class Prophet(object):
         return (k, m)
 
     @staticmethod
-    def logistic_growth_init(df):
+    def logistic_growth_init(df: pd.DataFrame) -> Tuple[float, float]:
         """Initialize logistic growth.
 
         Provides a strong initialization for logistic growth by calculating the
@@ -1095,7 +1109,7 @@ class Prophet(object):
         return (k, m)
 
     @staticmethod
-    def flat_growth_init(df):
+    def flat_growth_init(df: pd.DataFrame) -> Tuple[float, float]:
         """Initialize flat growth.
 
         Provides a strong initialization for flat growth. Sets the growth to 0
@@ -1185,7 +1199,7 @@ class Prophet(object):
             sigma_obs=1.0,
         )
 
-    def fit(self, df, **kwargs):
+    def fit(self, df, **kwargs) -> "Prophet":
         """Fit the Prophet model.
 
         This sets self.params to contain the fitted model parameters. It is a
@@ -1243,7 +1257,7 @@ class Prophet(object):
 
         return self
 
-    def predict(self, df: pd.DataFrame = None, vectorized: bool = True) -> pd.DataFrame:
+    def predict(self, df: Optional[pd.DataFrame] = None, vectorized: bool = True) -> pd.DataFrame:
         """Predict using the prophet model.
 
         Parameters
@@ -1283,7 +1297,7 @@ class Prophet(object):
         if self.logistic_floor:
             cols.append('floor')
         # Add in forecast components
-        df2 = pd.concat((df[cols], intervals, seasonal_components), axis=1)
+        df2 = pd.concat([df[cols], intervals, seasonal_components], axis=1)
         df2['yhat'] = (
                 df2['trend'] * (1 + df2['multiplicative_terms'])
                 + df2['additive_terms']
@@ -1361,7 +1375,7 @@ class Prophet(object):
         m_t = m * np.ones_like(t)
         return m_t
 
-    def predict_trend(self, df):
+    def predict_trend(self, df: pd.DataFrame):
         """Predict trend using the prophet model.
 
         Parameters
@@ -1389,7 +1403,7 @@ class Prophet(object):
 
         return trend * self.y_scale + df['floor']
 
-    def predict_seasonal_components(self, df):
+    def predict_seasonal_components(self, df: pd.DataFrame):
         """Predict seasonality components, holidays, and added regressors.
 
         Parameters
@@ -1451,7 +1465,7 @@ class Prophet(object):
 
         return pd.DataFrame(series)
 
-    def sample_posterior_predictive(self, df: pd.DataFrame, vectorized: bool) -> Dict[str, np.ndarray]:
+    def sample_posterior_predictive(self, df: pd.DataFrame, vectorized: bool) -> Dict[str, NDArray]:
         """Prophet posterior predictive samples.
 
         Parameters
@@ -1500,7 +1514,7 @@ class Prophet(object):
             sim_values[k] = np.column_stack(v)
         return sim_values
 
-    def sample_model(self, df, seasonal_features, iteration, s_a, s_m) -> Dict[str, np.ndarray]:
+    def sample_model(self, df: pd.DataFrame, seasonal_features: pd.DataFrame, iteration: int, s_a: NDArray, s_m: NDArray) -> Dict[str, NDArray]:
         """Simulate observations from the extrapolated generative model.
 
         Parameters
@@ -1535,10 +1549,10 @@ class Prophet(object):
         df: pd.DataFrame,
         seasonal_features: pd.DataFrame,
         iteration: int,
-        s_a: np.ndarray,
-        s_m: np.ndarray,
+        s_a: NDArray,
+        s_m: NDArray,
         n_samples: int,
-    ) -> List[Dict[str, np.ndarray]]:
+    ) -> List[Dict[str, NDArray]]:
         """Simulate observations from the extrapolated generative model. Vectorized version of sample_model().
 
         Returns
@@ -1563,7 +1577,7 @@ class Prophet(object):
             })
         return simulations
 
-    def sample_predictive_trend(self, df, iteration):
+    def sample_predictive_trend(self, df: pd.DataFrame, iteration: int) -> NDArray:
         """Simulate the trend using the extrapolated generative model.
 
         Parameters
@@ -1616,7 +1630,7 @@ class Prophet(object):
 
         return trend * self.y_scale + df['floor']
 
-    def sample_predictive_trend_vectorized(self, df: pd.DataFrame, n_samples: int, iteration: int = 0) -> np.ndarray:
+    def sample_predictive_trend_vectorized(self, df: pd.DataFrame, n_samples: int, iteration: int = 0) -> NDArray:
         """Sample draws of the future trend values. Vectorized version of sample_predictive_trend().
 
         Returns
@@ -1642,7 +1656,7 @@ class Prophet(object):
             np.tile(df["floor"].values, (n_samples, 1))
         )
 
-    def _sample_uncertainty(self, df: pd.DataFrame, n_samples: int, iteration: int = 0) -> np.ndarray:
+    def _sample_uncertainty(self, df: pd.DataFrame, n_samples: int, iteration: int = 0) -> NDArray:
         """Sample draws of future trend changes, vectorizing as much as possible.
 
         Parameters
@@ -1702,7 +1716,7 @@ class Prophet(object):
     @staticmethod
     def _make_trend_shift_matrix(
         mean_delta: float, likelihood: float, future_length: float, n_samples: int
-    ) -> np.ndarray:
+    ) -> NDArray:
         """
         Creates a matrix of random trend shifts based on historical likelihood and size of shifts.
         Can be used for either linear or logistic trend shifts.
@@ -1734,15 +1748,15 @@ class Prophet(object):
 
     def _logistic_uncertainty(
         self,
-        mat: np.ndarray,
-        deltas: np.ndarray,
+        mat: NDArray,
+        deltas: NDArray,
         k: float,
         m: float,
-        cap: np.ndarray,
-        t_time: np.ndarray,
+        cap: NDArray,
+        t_time: NDArray,
         n_length: int,
-        single_diff: float = None,
-    ) -> np.ndarray:
+        single_diff: Optional[float] = None,
+    ) -> NDArray:
         """
         Vectorizes prophet's logistic uncertainty by creating a matrix of future possible trends.
 
@@ -1816,7 +1830,7 @@ class Prophet(object):
         df = self.setup_dataframe(df.copy())
         return self.sample_posterior_predictive(df, vectorized)
 
-    def percentile(self, a, *args, **kwargs):
+    def percentile(self, a: float, *args, **kwargs):
         """
         We rely on np.nanpercentile in the rare instances where there
         are a small number of bad samples with MCMC that contain NaNs.
@@ -1827,7 +1841,7 @@ class Prophet(object):
         fn = np.nanpercentile if np.isnan(a).any() else np.percentile
         return fn(a, *args, **kwargs)
 
-    def make_future_dataframe(self, periods, freq='D', include_history=True):
+    def make_future_dataframe(self, periods: int, freq: str = 'D', include_history: bool = True) -> pd.DataFrame:
         """Simulate the trend using the extrapolated generative model.
 
         Parameters
